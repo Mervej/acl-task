@@ -1,4 +1,9 @@
-export { AccessTokenClaims, InvalidTokenError, signAccessToken, verifyAccessToken } from './jwt';
-export { PermissionCheckClient } from './permission-check-client';
-export { TenantConnectionResolver, TenantDbRecord } from './tenant-connection-resolver';
-export { AuditEventEmitter, AuditEvent } from './audit-event-emitter';
+export * from './jwt';
+export * from './permission-check-client';
+export * from './tenant-connection-resolver';
+export * from './audit-event-emitter';
+export * from './nest/auth.guard';
+export * from './nest/current-auth.decorator';
+export * from './nest/permission.guard';
+export * from './nest/require-permission.decorator';
+export * from './nest/service-api-key.guard';
