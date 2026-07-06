@@ -1,11 +1,17 @@
 {
-  "name": "payoneer_task",
-  "version": "1.0.0",
-  "description": "Access contorl",
-  "main": "index.js",
+  "name": "access-control-platform",
+  "private": true,
+  "workspaces": ["packages/*"],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
   },
-  "author": "",
-  "license": "ISC"
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.11.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "@types/jest": "^29.5.0"
+  }
 }
