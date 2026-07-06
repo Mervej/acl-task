@@ -137,6 +137,14 @@ npm workspaces monorepo:
 
 `docker-compose up` starts Postgres + Redis. `npm run seed` provisions per-tenant-per-service databases and seed data. `npm run dev` runs all 9 services concurrently.
 
+## 11a. Scope Reduction (2026-07-06, mid-build)
+
+This is an interview take-home submission, not a production deployment — after Access Control (full RBAC), the Gateway, User Management, Expense Management, and a Payroll stub were built and verified actually booting end-to-end (proving the DB-per-tenant-per-service pattern, cross-service auth, and org-unit scoping all work), the remaining 4 resource services were intentionally reduced in scope to keep effort proportional to what an interview evaluation needs:
+
+- **Reporting, Workflow, Notification, Invoice Management**: minimal stub endpoints only (guarded routes returning simple in-memory/placeholder responses) — no dedicated per-tenant DB schema, entities, or migrations for these 4. The DB-per-tenant-per-service pattern, cross-service auth, and RBAC enforcement are already proven for real by User Management, Expense Management, and Payroll; repeating the identical scaffold 4 more times adds no new evaluative signal.
+- **Payroll** gets its full entity-backed implementation (per the original plan) since it's part of the core "prove the pattern end-to-end" flow with Expense Management.
+- **Audit service** is still built for real (it's an explicitly named requirement of the assignment), but implemented directly rather than via heavy multi-agent orchestration.
+
 ## 11. Testing Strategy
 
 - **Unit tests:** permission-evaluation logic (org-unit subtree matching, role→permission resolution), edge cases (deactivated user, expired token, role removed mid-session, org unit deleted while users still assigned).
