@@ -80,7 +80,11 @@ export class TenantConnectionResolver {
       if (!oldest) break;
       const dataSource = this.pools.get(oldest);
       this.pools.delete(oldest);
-      void dataSource?.destroy();
+      if (dataSource) {
+        void dataSource.destroy().catch((err) => {
+          console.error(`Failed to destroy connection for tenant ${oldest}:`, err);
+        });
+      }
     }
   }
 }
