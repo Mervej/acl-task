@@ -1,5 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { In } from 'typeorm';
+import bcrypt from 'bcrypt';
 import type { TenantConnectionResolver } from '@platform/auth-kit';
 import { signAccessToken } from '@platform/auth-kit';
 import { controlPlaneDataSource } from '../control-plane/data-source';
@@ -7,6 +8,13 @@ import { Tenant } from '../control-plane/entities';
 import { User, Role, RolePermission, RoleAssignment, RefreshToken } from '../tenant/entities';
 import { verifyPassword, hashSecret } from '../password';
 import { randomBytes } from 'crypto';
+
+// Precomputed once at module load so that login() always pays the cost of a
+// bcrypt comparison, even when the user (and therefore a real password hash)
+// doesn't exist. Without this, "unknown email" would return faster than
+// "known email, wrong password", letting an attacker enumerate valid emails
+// within a tenant via response timing.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('dummy-password-for-timing-safety', 10);
 
 @Injectable()
 export class AuthService {
@@ -52,7 +60,8 @@ export class AuthService {
     const user = await dataSource
       .getRepository(User)
       .findOne({ where: { tenantId: tenant.id, email, status: 'active' } });
-    if (!user || !(await verifyPassword(password, user.passwordHash))) {
+    const passwordValid = await verifyPassword(password, user ? user.passwordHash : DUMMY_PASSWORD_HASH);
+    if (!user || !passwordValid) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
