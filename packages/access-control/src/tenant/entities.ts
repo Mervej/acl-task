@@ -42,3 +42,22 @@ export class RoleAssignment {
   @Column() roleId!: string;
   @Column({ type: 'uuid', nullable: true }) orgUnitId!: string | null;
 }
+
+@Entity('api_keys')
+export class ApiKey {
+  @PrimaryGeneratedColumn('uuid') id!: string;
+  @Column() tenantId!: string;
+  @Column() ownerService!: string;
+  @Column() keyHash!: string;
+  @Column({ type: 'timestamptz', nullable: true }) revokedAt!: Date | null;
+}
+
+@Entity('refresh_tokens')
+export class RefreshToken {
+  @PrimaryGeneratedColumn('uuid') id!: string;
+  @Column() tenantId!: string;
+  @Column() userId!: string;
+  @Column() tokenHash!: string;
+  @Column({ type: 'timestamptz' }) expiresAt!: Date;
+  @Column({ type: 'timestamptz', nullable: true }) revokedAt!: Date | null;
+}

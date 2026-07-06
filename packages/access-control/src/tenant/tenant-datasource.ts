@@ -2,7 +2,7 @@ import type { Redis } from 'ioredis';
 import { TenantConnectionResolver, TenantDbRecord } from '@platform/auth-kit';
 import { controlPlaneDataSource } from '../control-plane/data-source';
 import { TenantDbRegistry } from '../control-plane/entities';
-import { User, OrgUnit, Role, RolePermission, RoleAssignment } from './entities';
+import { User, OrgUnit, Role, RolePermission, RoleAssignment, ApiKey, RefreshToken } from './entities';
 
 const SERVICE_NAME = 'access-control';
 const CACHE_TTL_SECONDS = 60;
@@ -10,7 +10,7 @@ const CACHE_TTL_SECONDS = 60;
 export function createTenantDataSourceResolver(redis: Redis): TenantConnectionResolver {
   return new TenantConnectionResolver({
     serviceName: SERVICE_NAME,
-    entities: [User, OrgUnit, Role, RolePermission, RoleAssignment],
+    entities: [User, OrgUnit, Role, RolePermission, RoleAssignment, ApiKey, RefreshToken],
     lookupTenantDb: async (tenantId: string): Promise<TenantDbRecord> => {
       const cacheKey = `tenant-db:${SERVICE_NAME}:${tenantId}`;
       const cached = await redis.get(cacheKey);

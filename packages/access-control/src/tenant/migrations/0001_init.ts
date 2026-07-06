@@ -54,9 +54,30 @@ export class TenantInit0001 implements MigrationInterface {
         "orgUnitId" UUID
       )
     `);
+    await queryRunner.query(`
+      CREATE TABLE api_keys (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        "tenantId" UUID NOT NULL,
+        "ownerService" VARCHAR NOT NULL,
+        "keyHash" VARCHAR NOT NULL,
+        "revokedAt" TIMESTAMPTZ
+      )
+    `);
+    await queryRunner.query(`
+      CREATE TABLE refresh_tokens (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        "tenantId" UUID NOT NULL,
+        "userId" UUID NOT NULL,
+        "tokenHash" VARCHAR NOT NULL,
+        "expiresAt" TIMESTAMPTZ NOT NULL,
+        "revokedAt" TIMESTAMPTZ
+      )
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP TABLE refresh_tokens`);
+    await queryRunner.query(`DROP TABLE api_keys`);
     await queryRunner.query(`DROP TABLE role_assignments`);
     await queryRunner.query(`DROP TABLE role_permissions`);
     await queryRunner.query(`DROP TABLE roles`);
