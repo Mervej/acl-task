@@ -17,8 +17,10 @@ interface TenantConnectionResolverOptions {
 
 export class TenantConnectionResolver {
   private readonly opts: Required<TenantConnectionResolverOptions>;
+  // A Map's insertion order doubles as LRU order: re-inserting a key on
+  // access (delete then set) moves it to the end, so the first key is
+  // always the least recently used.
   private readonly pools = new Map<string, DataSource>();
-  private readonly lruOrder: string[] = [];
   private readonly inFlight = new Map<string, Promise<DataSource>>();
 
   constructor(opts: TenantConnectionResolverOptions) {
@@ -28,7 +30,8 @@ export class TenantConnectionResolver {
   async getConnection(tenantId: string): Promise<DataSource> {
     const cached = this.pools.get(tenantId);
     if (cached) {
-      this.touch(tenantId);
+      this.pools.delete(tenantId);
+      this.pools.set(tenantId, cached);
       return cached;
     }
 
@@ -48,7 +51,6 @@ export class TenantConnectionResolver {
     const record = await this.opts.lookupTenantDb(tenantId);
     const dataSource = await this.createDataSource(record);
     this.pools.set(tenantId, dataSource);
-    this.touch(tenantId);
     this.evictIfNeeded();
     return dataSource;
   }
@@ -68,23 +70,13 @@ export class TenantConnectionResolver {
     return dataSource;
   }
 
-  private touch(tenantId: string): void {
-    const idx = this.lruOrder.indexOf(tenantId);
-    if (idx !== -1) this.lruOrder.splice(idx, 1);
-    this.lruOrder.push(tenantId);
-  }
-
   private evictIfNeeded(): void {
-    while (this.lruOrder.length > this.opts.maxOpenConnections) {
-      const oldest = this.lruOrder.shift();
-      if (!oldest) break;
-      const dataSource = this.pools.get(oldest);
-      this.pools.delete(oldest);
-      if (dataSource) {
-        void dataSource.destroy().catch((err) => {
-          console.error(`Failed to destroy connection for tenant ${oldest}:`, err);
-        });
-      }
-    }
+    if (this.pools.size <= this.opts.maxOpenConnections) return;
+    const oldestTenantId = this.pools.keys().next().value as string;
+    const dataSource = this.pools.get(oldestTenantId);
+    this.pools.delete(oldestTenantId);
+    void dataSource?.destroy().catch((err) => {
+      console.error(`Failed to destroy connection for tenant ${oldestTenantId}:`, err);
+    });
   }
 }
