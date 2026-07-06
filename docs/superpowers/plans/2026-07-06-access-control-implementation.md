@@ -7049,9 +7049,55 @@ export async function provisionTenant(
 
   const registryRepo = controlPlaneDataSource.getRepository(TenantDbRegistry);
   const serviceApiKey = sharedApiKeyOverride ?? randomBytes(32).toString('hex');
-```
 
-(the remainder of the function body is unchanged from Task 20/Task 21's version)
+  for (const spec of PROVISIONED_SERVICES) {
+    const databaseName = `${spec.serviceName}_${slug}`.replace(/-/g, '_');
+    await createDatabaseIfNotExists(databaseName);
+
+    await registryRepo.save(
+      registryRepo.create({
+        tenantId: tenant.id,
+        serviceName: spec.serviceName,
+        host: DB_HOST,
+        port: DB_PORT,
+        database: databaseName,
+        username: DB_USER,
+        password: DB_PASSWORD,
+      }),
+    );
+
+    const migrationDataSource = new DataSource({
+      type: 'postgres',
+      host: DB_HOST,
+      port: DB_PORT,
+      username: DB_USER,
+      password: DB_PASSWORD,
+      database: databaseName,
+      entities: spec.entities,
+      migrations: [spec.migrationsGlob],
+      synchronize: false,
+    });
+    await migrationDataSource.initialize();
+    await migrationDataSource.runMigrations();
+
+    if (spec.serviceName === 'access-control') {
+      const apiKeyRepo = migrationDataSource.getRepository(ApiKey);
+      await apiKeyRepo.save(
+        apiKeyRepo.create({
+          tenantId: tenant.id,
+          ownerService: 'shared',
+          keyHash: hashSecret(serviceApiKey),
+          revokedAt: null,
+        }),
+      );
+    }
+
+    await migrationDataSource.destroy();
+  }
+
+  return { tenantId: tenant.id, serviceApiKey };
+}
+```
 
 - [ ] **Step 4: Run test to verify it passes**
 
