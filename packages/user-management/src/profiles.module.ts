@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import Redis from 'ioredis';
-import { Reflector } from '@nestjs/core';
 import { ProfilesController } from './profiles.controller';
 import { ProfilesService } from './profiles.service';
-import { AuthGuard, PermissionGuard, PermissionCheckClient } from '@platform/auth-kit';
 import { createTenantDataSourceResolver } from './tenant-datasource';
 
+// AuthGuard/PermissionGuard are constructed directly in profiles.controller.ts
+// and passed to @UseGuards() as instances — see org-units.controller.ts for why.
 @Module({
   controllers: [ProfilesController],
   providers: [
@@ -19,19 +19,6 @@ import { createTenantDataSourceResolver } from './tenant-datasource';
           process.env.SERVICE_API_KEY ?? '',
         );
       },
-    },
-    { provide: AuthGuard, useFactory: () => new AuthGuard(process.env.JWT_SECRET ?? 'dev-secret-change-me') },
-    {
-      provide: PermissionGuard,
-      useFactory: (reflector: Reflector) =>
-        new PermissionGuard(
-          reflector,
-          new PermissionCheckClient({
-            accessControlBaseUrl: process.env.ACCESS_CONTROL_BASE_URL ?? 'http://localhost:3001',
-            serviceApiKey: process.env.SERVICE_API_KEY ?? '',
-          }),
-        ),
-      inject: [Reflector],
     },
   ],
 })

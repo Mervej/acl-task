@@ -1,10 +1,21 @@
 import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
-import { AuthGuard, PermissionGuard, RequirePermission } from '@platform/auth-kit';
+import { Reflector } from '@nestjs/core';
+import { AuthGuard, PermissionGuard, PermissionCheckClient, RequirePermission } from '@platform/auth-kit';
 import { RolesService } from './roles.service';
 import { CreateRoleDto, AssignRoleDto } from './dto';
 
+// See org-units.controller.ts for why guard instances (not classes) are passed to @UseGuards().
+const authGuard = new AuthGuard(process.env.JWT_SECRET ?? 'dev-secret-change-me');
+const permissionGuard = new PermissionGuard(
+  new Reflector(),
+  new PermissionCheckClient({
+    accessControlBaseUrl: `http://localhost:${process.env.PORT ?? 3001}`,
+    serviceApiKey: process.env.ACCESS_CONTROL_SELF_KEY ?? '',
+  }),
+);
+
 @Controller()
-@UseGuards(AuthGuard, PermissionGuard)
+@UseGuards(authGuard, permissionGuard)
 export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 

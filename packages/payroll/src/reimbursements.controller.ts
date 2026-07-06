@@ -1,5 +1,17 @@
 import { Body, Controller, Headers, Post, UnauthorizedException, UseGuards } from '@nestjs/common';
-import { AuthGuard, PermissionGuard, RequirePermission } from '@platform/auth-kit';
+import { Reflector } from '@nestjs/core';
+import { AuthGuard, PermissionGuard, PermissionCheckClient, RequirePermission } from '@platform/auth-kit';
+
+// See packages/access-control/src/org-units/org-units.controller.ts for why guard
+// instances (not classes) are passed to @UseGuards() here.
+const authGuard = new AuthGuard(process.env.JWT_SECRET ?? 'dev-secret-change-me');
+const permissionGuard = new PermissionGuard(
+  new Reflector(),
+  new PermissionCheckClient({
+    accessControlBaseUrl: process.env.ACCESS_CONTROL_BASE_URL ?? 'http://localhost:3001',
+    serviceApiKey: process.env.SERVICE_API_KEY ?? '',
+  }),
+);
 
 interface RecordReimbursementDto {
   tenantId: string;
@@ -19,7 +31,7 @@ async function verifyServiceKey(tenantId: string, key: string): Promise<boolean>
 }
 
 @Controller('reimbursements')
-@UseGuards(AuthGuard, PermissionGuard)
+@UseGuards(authGuard, permissionGuard)
 export class ReimbursementsController {
   @Post()
   @RequirePermission('payroll:run')
