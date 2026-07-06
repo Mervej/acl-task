@@ -19,6 +19,7 @@ export class TenantConnectionResolver {
   private readonly opts: Required<TenantConnectionResolverOptions>;
   private readonly pools = new Map<string, DataSource>();
   private readonly lruOrder: string[] = [];
+  private readonly inFlight = new Map<string, Promise<DataSource>>();
 
   constructor(opts: TenantConnectionResolverOptions) {
     this.opts = { maxOpenConnections: 100, ...opts };
@@ -30,6 +31,20 @@ export class TenantConnectionResolver {
       this.touch(tenantId);
       return cached;
     }
+
+    const pending = this.inFlight.get(tenantId);
+    if (pending) {
+      return pending;
+    }
+
+    const creation = this.createAndCacheConnection(tenantId).finally(() => {
+      this.inFlight.delete(tenantId);
+    });
+    this.inFlight.set(tenantId, creation);
+    return creation;
+  }
+
+  private async createAndCacheConnection(tenantId: string): Promise<DataSource> {
     const record = await this.opts.lookupTenantDb(tenantId);
     const dataSource = await this.createDataSource(record);
     this.pools.set(tenantId, dataSource);

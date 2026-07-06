@@ -47,4 +47,29 @@ describe('TenantConnectionResolver', () => {
     await resolver.getConnection('tenant-2');
     expect(destroyA).toHaveBeenCalled();
   });
+
+  it('de-dupes concurrent getConnection calls for the same uncached tenant', async () => {
+    const lookupTenantDb = jest.fn().mockResolvedValue({
+      host: 'localhost', port: 5432, database: 'db', username: 'u', password: 'p',
+    });
+    const resolver = new TenantConnectionResolver({
+      serviceName: 'test-service',
+      entities: [] as unknown as Function[],
+      lookupTenantDb,
+    });
+    const spy = jest
+      .spyOn(resolver as any, 'createDataSource')
+      .mockResolvedValue({ isInitialized: true, destroy: jest.fn() });
+
+    // Two concurrent calls for the same brand-new tenant should share a single
+    // in-flight creation instead of each racing to create their own DataSource.
+    const [a, b] = await Promise.all([
+      resolver.getConnection('tenant-concurrent'),
+      resolver.getConnection('tenant-concurrent'),
+    ]);
+
+    expect(a).toBe(b);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(lookupTenantDb).toHaveBeenCalledTimes(1);
+  });
 });
