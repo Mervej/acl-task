@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { AuthGuard, PermissionGuard, PermissionCheckClient, RequirePermission } from '@platform/auth-kit';
+import { AuthGuard, CurrentAuth, PermissionGuard, PermissionCheckClient, RequirePermission, resolveOwnServiceApiKey } from '@platform/auth-kit';
+import type { AccessTokenClaims } from '@platform/auth-kit';
 import { RolesService } from './roles.service';
 import { CreateRoleDto, AssignRoleDto } from './dto';
 
@@ -10,7 +11,7 @@ const permissionGuard = new PermissionGuard(
   new Reflector(),
   new PermissionCheckClient({
     accessControlBaseUrl: `http://localhost:${process.env.PORT ?? 3001}`,
-    serviceApiKey: process.env.ACCESS_CONTROL_SELF_KEY ?? '',
+    serviceApiKey: resolveOwnServiceApiKey('access-control'),
   }),
 );
 
@@ -19,22 +20,24 @@ const permissionGuard = new PermissionGuard(
 export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
+  // tenantId always comes from the caller's own JWT (auth.tenantId), never from
+  // the request body/query — see org-units.controller.ts for why.
   @Post('roles')
   @RequirePermission('role:manage')
-  async create(@Body() dto: CreateRoleDto) {
-    return this.rolesService.createRole(dto.tenantId, dto.name, dto.description ?? '', dto.permissionKeys);
+  async create(@Body() dto: CreateRoleDto, @CurrentAuth() auth: AccessTokenClaims) {
+    return this.rolesService.createRole(auth.tenantId, dto.name, dto.description ?? '', dto.permissionKeys);
   }
 
   @Get('roles')
   @RequirePermission('role:manage')
-  async list(@Query('tenantId') tenantId: string) {
-    return this.rolesService.listRoles(tenantId);
+  async list(@CurrentAuth() auth: AccessTokenClaims) {
+    return this.rolesService.listRoles(auth.tenantId);
   }
 
   @Post('role-assignments')
   @RequirePermission('role:manage')
-  async assign(@Body() dto: AssignRoleDto) {
-    await this.rolesService.assignRole(dto.tenantId, dto.userId, dto.roleId, dto.orgUnitId ?? null);
+  async assign(@Body() dto: AssignRoleDto, @CurrentAuth() auth: AccessTokenClaims) {
+    await this.rolesService.assignRole(auth.tenantId, dto.userId, dto.roleId, dto.orgUnitId ?? null);
     return { status: 'assigned' };
   }
 }

@@ -1,47 +1,44 @@
 import { Body, Controller, Headers, Post, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { AuthGuard, PermissionGuard, PermissionCheckClient, RequirePermission } from '@platform/auth-kit';
+import Redis from 'ioredis';
+import { AuthGuard, CurrentAuth, PermissionGuard, PermissionCheckClient, RequirePermission, resolveOwnServiceApiKey } from '@platform/auth-kit';
+import { AuditEventEmitter } from '@platform/auth-kit';
+import type { AccessTokenClaims } from '@platform/auth-kit';
 
-// See packages/access-control/src/org-units/org-units.controller.ts for why guard
-// instances (not classes) are passed to @UseGuards() here.
+const auditEmitter = new AuditEventEmitter(new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379'));
+
 const authGuard = new AuthGuard(process.env.JWT_SECRET ?? 'dev-secret-change-me');
-const permissionGuard = new PermissionGuard(
-  new Reflector(),
-  new PermissionCheckClient({
-    accessControlBaseUrl: process.env.ACCESS_CONTROL_BASE_URL ?? 'http://localhost:3001',
-    serviceApiKey: process.env.SERVICE_API_KEY ?? '',
-  }),
-);
+const permissionCheckClient = new PermissionCheckClient({
+  accessControlBaseUrl: process.env.ACCESS_CONTROL_BASE_URL ?? 'http://localhost:3001',
+  serviceApiKey: resolveOwnServiceApiKey('payroll'),
+});
+const permissionGuard = new PermissionGuard(new Reflector(), permissionCheckClient);
 
 interface RecordReimbursementDto {
-  tenantId: string;
   expenseId: string;
   amountCents: number;
-}
-
-async function verifyServiceKey(tenantId: string, key: string): Promise<boolean> {
-  const res = await fetch(`${process.env.ACCESS_CONTROL_BASE_URL ?? 'http://localhost:3001'}/authz/verify-service-key`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ tenantId, key }),
-  });
-  if (!res.ok) return false;
-  const body = (await res.json()) as { valid: boolean };
-  return body.valid;
 }
 
 @Controller('reimbursements')
 @UseGuards(authGuard, permissionGuard)
 export class ReimbursementsController {
+  // tenantId always comes from the caller's own JWT (auth.tenantId), never from
+  // the request body — see org-units.controller.ts (access-control) for why.
   @Post()
   @RequirePermission('payroll:run')
   async record(
     @Body() dto: RecordReimbursementDto,
+    @CurrentAuth() auth: AccessTokenClaims,
     @Headers('x-service-api-key') serviceApiKey?: string,
   ) {
     if (!serviceApiKey) throw new UnauthorizedException('Missing x-service-api-key header');
-    const validKey = await verifyServiceKey(dto.tenantId, serviceApiKey);
+    const validKey = await permissionCheckClient.verifyServiceKey(auth.tenantId, serviceApiKey);
     if (!validKey) throw new UnauthorizedException('Invalid service API key');
+    await auditEmitter.emit({
+      tenantId: auth.tenantId, actorUserId: null, service: 'payroll',
+      action: 'payroll.reimbursement.record', resourceType: 'expense', resourceId: dto.expenseId,
+      decision: 'allow', viaService: 'expense-management',
+    });
     return { status: 'recorded', expenseId: dto.expenseId, amountCents: dto.amountCents };
   }
 }

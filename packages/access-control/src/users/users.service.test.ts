@@ -26,7 +26,7 @@ describe('UsersService', () => {
     const resolver = { getConnection: jest.fn().mockResolvedValue(fakeDataSource) } as any;
 
     const service = new UsersService(resolver);
-    expect(await service.verifyServiceApiKey('tenant-1', 'any-service', 'secret-key')).toBe(true);
-    expect(await service.verifyServiceApiKey('tenant-1', 'any-service', 'wrong-key')).toBe(false);
+    expect(await service.verifyServiceApiKey('tenant-1', 'secret-key')).toBe(true);
+    expect(await service.verifyServiceApiKey('tenant-1', 'wrong-key')).toBe(false);
   });
 });

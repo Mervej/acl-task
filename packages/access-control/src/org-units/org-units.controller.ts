@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { AuthGuard, PermissionGuard, PermissionCheckClient, RequirePermission, CurrentAuth } from '@platform/auth-kit';
+import { AuthGuard, PermissionGuard, PermissionCheckClient, RequirePermission, CurrentAuth, resolveOwnServiceApiKey } from '@platform/auth-kit';
+import type { AccessTokenClaims } from '@platform/auth-kit';
 import { OrgUnitsService } from './org-units.service';
 import { CreateOrgUnitDto } from './dto';
 
@@ -14,7 +15,7 @@ const permissionGuard = new PermissionGuard(
   new Reflector(),
   new PermissionCheckClient({
     accessControlBaseUrl: `http://localhost:${process.env.PORT ?? 3001}`,
-    serviceApiKey: process.env.ACCESS_CONTROL_SELF_KEY ?? '',
+    serviceApiKey: resolveOwnServiceApiKey('access-control'),
   }),
 );
 
@@ -23,15 +24,18 @@ const permissionGuard = new PermissionGuard(
 export class OrgUnitsController {
   constructor(private readonly orgUnitsService: OrgUnitsService) {}
 
+  // tenantId always comes from the caller's own JWT (auth.tenantId), never from
+  // the request body/query — a client-supplied tenantId would let a valid user
+  // from one tenant read or write another tenant's data just by changing it.
   @Post()
   @RequirePermission('role:manage')
-  async create(@Body() dto: CreateOrgUnitDto) {
-    return this.orgUnitsService.create(dto.tenantId, dto.name, dto.parentId ?? null);
+  async create(@Body() dto: CreateOrgUnitDto, @CurrentAuth() auth: AccessTokenClaims) {
+    return this.orgUnitsService.create(auth.tenantId, dto.name, dto.parentId ?? null);
   }
 
   @Get()
   @RequirePermission('role:manage')
-  async list(@Query('tenantId') tenantId: string, @CurrentAuth() _auth: unknown) {
-    return this.orgUnitsService.list(tenantId);
+  async list(@CurrentAuth() auth: AccessTokenClaims) {
+    return this.orgUnitsService.list(auth.tenantId);
   }
 }

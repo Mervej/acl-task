@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import Redis from 'ioredis';
 import type { TenantConnectionResolver } from '@platform/auth-kit';
+import { AuditEventEmitter } from '@platform/auth-kit';
 import { UserProfile } from './entities';
+
+const auditEmitter = new AuditEventEmitter(new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379'));
 
 interface CreateProfileInput {
   tenantId: string;
@@ -19,7 +23,7 @@ export class ProfilesService {
     private readonly resolver: TenantConnectionResolver,
     private readonly accessControlBaseUrl: string,
     private readonly serviceApiKey: string,
-  ) {}
+  ) { }
 
   async createProfile(input: CreateProfileInput): Promise<UserProfile> {
     const res = await fetch(`${this.accessControlBaseUrl}/internal/users`, {
@@ -27,6 +31,7 @@ export class ProfilesService {
       headers: { 'content-type': 'application/json', 'x-service-api-key': this.serviceApiKey },
       body: JSON.stringify({ tenantId: input.tenantId, email: input.email, password: input.password }),
     });
+
     if (!res.ok) throw new Error(`Failed to provision identity: ${res.status}`);
     const identity = (await res.json()) as { id: string };
 
@@ -41,7 +46,12 @@ export class ProfilesService {
       managerId: input.managerId,
       hireDate: input.hireDate,
     });
-    return repo.save(profile);
+    const saved = await repo.save(profile);
+    await auditEmitter.emit({
+      tenantId: input.tenantId, actorUserId: saved.userId, service: 'user-management',
+      action: 'user.profile.create', resourceType: 'user_profile', resourceId: saved.id, decision: 'allow',
+    });
+    return saved;
   }
 
   async getProfile(tenantId: string, id: string): Promise<UserProfile | null> {

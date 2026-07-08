@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import Redis from 'ioredis';
+import { resolveOwnServiceApiKey } from '@platform/auth-kit';
 import { ProfilesController } from './profiles.controller';
 import { ProfilesService } from './profiles.service';
 import { createTenantDataSourceResolver } from './tenant-datasource';
@@ -16,7 +17,7 @@ import { createTenantDataSourceResolver } from './tenant-datasource';
         return new ProfilesService(
           createTenantDataSourceResolver(redis),
           process.env.ACCESS_CONTROL_BASE_URL ?? 'http://localhost:3001',
-          process.env.SERVICE_API_KEY ?? '',
+          resolveOwnServiceApiKey('user-management'),
         );
       },
     },

@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import Redis from 'ioredis';
 import type { TenantConnectionResolver } from '@platform/auth-kit';
+import { AuditEventEmitter } from '@platform/auth-kit';
 import { AuthService } from '../auth/auth.service';
 import { UsersService } from '../users/users.service';
 import { OrgUnit } from '../tenant/entities';
+
+const auditEmitter = new AuditEventEmitter(new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379'));
 
 @Injectable()
 export class AuthzService {
@@ -10,9 +14,28 @@ export class AuthzService {
     private readonly resolver: TenantConnectionResolver,
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
-  ) {}
+  ) { }
 
   async check(
+    tenantId: string,
+    userId: string,
+    permission: string,
+    orgUnitId: string | null,
+  ): Promise<boolean> {
+    const allowed = await this.evaluate(tenantId, userId, permission, orgUnitId);
+    await auditEmitter.emit({
+      tenantId,
+      actorUserId: userId,
+      service: 'access-control',
+      action: `authz.check:${permission}`,
+      resourceType: 'permission-check',
+      resourceId: orgUnitId,
+      decision: allowed ? 'allow' : 'deny',
+    });
+    return allowed;
+  }
+
+  private async evaluate(
     tenantId: string,
     userId: string,
     permission: string,
@@ -29,7 +52,7 @@ export class AuthzService {
   }
 
   async verifyServiceKey(tenantId: string, plainKey: string): Promise<boolean> {
-    return this.usersService.verifyServiceApiKey(tenantId, 'unspecified', plainKey);
+    return this.usersService.verifyServiceApiKey(tenantId, plainKey);
   }
 
   private isDescendant(

@@ -1,12 +1,15 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { In } from 'typeorm';
+import Redis from 'ioredis';
 import type { TenantConnectionResolver } from '@platform/auth-kit';
-import { signAccessToken } from '@platform/auth-kit';
+import { signAccessToken, AuditEventEmitter } from '@platform/auth-kit';
 import { controlPlaneDataSource } from '../control-plane/data-source';
 import { Tenant } from '../control-plane/entities';
 import { User, Role, RolePermission, RoleAssignment, RefreshToken } from '../tenant/entities';
 import { verifyPassword, hashSecret } from '../password';
 import { randomBytes } from 'crypto';
+
+const auditEmitter = new AuditEventEmitter(new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379'));
 
 @Injectable()
 export class AuthService {
@@ -52,7 +55,18 @@ export class AuthService {
     const user = await dataSource
       .getRepository(User)
       .findOne({ where: { tenantId: tenant.id, email, status: 'active' } });
-    if (!user || !(await verifyPassword(password, user.passwordHash))) {
+
+    const loginOk = user && (await verifyPassword(password, user.passwordHash));
+    if (!loginOk) {
+      await auditEmitter.emit({
+        tenantId: tenant.id,
+        actorUserId: user?.id ?? null,
+        service: 'access-control',
+        action: 'auth.login',
+        resourceType: 'user',
+        resourceId: user?.id ?? null,
+        decision: 'deny',
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -78,6 +92,16 @@ export class AuthService {
         revokedAt: null,
       }),
     );
+
+    await auditEmitter.emit({
+      tenantId: tenant.id,
+      actorUserId: user.id,
+      service: 'access-control',
+      action: 'auth.login',
+      resourceType: 'user',
+      resourceId: user.id,
+      decision: 'allow',
+    });
 
     return { accessToken, refreshToken: refreshTokenPlain };
   }

@@ -31,11 +31,7 @@ export class UsersService {
     return { id: found.id, email: found.email, status: found.status };
   }
 
-  async verifyServiceApiKey(
-    tenantId: string,
-    _ownerService: string,
-    plainKey: string,
-  ): Promise<boolean> {
+  async verifyServiceApiKey(tenantId: string, plainKey: string): Promise<boolean> {
     const dataSource = await this.resolver.getConnection(tenantId);
     const repo = dataSource.getRepository(ApiKey);
     const keyHash = hashSecret(plainKey);

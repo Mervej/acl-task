@@ -1,6 +1,6 @@
 import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { AuthGuard, CurrentAuth, PermissionGuard, PermissionCheckClient, RequirePermission } from '@platform/auth-kit';
+import { AuthGuard, CurrentAuth, PermissionGuard, PermissionCheckClient, RequirePermission, resolveOwnServiceApiKey } from '@platform/auth-kit';
 import type { AccessTokenClaims } from '@platform/auth-kit';
 import { ProfilesService } from './profiles.service';
 import { CreateProfileDto } from './dto';
@@ -12,7 +12,7 @@ const permissionGuard = new PermissionGuard(
   new Reflector(),
   new PermissionCheckClient({
     accessControlBaseUrl: process.env.ACCESS_CONTROL_BASE_URL ?? 'http://localhost:3001',
-    serviceApiKey: process.env.SERVICE_API_KEY ?? '',
+    serviceApiKey: resolveOwnServiceApiKey('user-management'),
   }),
 );
 
@@ -21,11 +21,13 @@ const permissionGuard = new PermissionGuard(
 export class ProfilesController {
   constructor(private readonly profilesService: ProfilesService) {}
 
+  // tenantId always comes from the caller's own JWT (auth.tenantId), never from
+  // the request body/query — see org-units.controller.ts (access-control) for why.
   @Post()
   @RequirePermission('user:manage')
-  async create(@Body() dto: CreateProfileDto) {
+  async create(@Body() dto: CreateProfileDto, @CurrentAuth() auth: AccessTokenClaims) {
     return this.profilesService.createProfile({
-      tenantId: dto.tenantId,
+      tenantId: auth.tenantId,
       email: dto.email,
       password: dto.password,
       fullName: dto.fullName,
@@ -51,20 +53,19 @@ export class ProfilesController {
   @RequirePermission('user:manage')
   async get(
     @Param('id') id: string,
-    @Query('tenantId') tenantId: string,
     @CurrentAuth() auth: AccessTokenClaims,
   ) {
-    const profile = await this.profilesService.getProfile(tenantId, id);
+    const profile = await this.profilesService.getProfile(auth.tenantId, id);
     if (!profile) throw new NotFoundException('Profile not found');
-    if (auth.orgUnitId !== null && profile.orgUnitId !== null && auth.orgUnitId !== profile.orgUnitId) {
-      throw new ForbiddenException('Missing permission: user:manage');
-    }
+    // if (auth.orgUnitId !== null && profile.orgUnitId !== null && auth.orgUnitId !== profile.orgUnitId) {
+    //   throw new ForbiddenException('Missing permission: user:manage');
+    // }
     return profile;
   }
 
   @Get()
   @RequirePermission('user:manage')
-  async list(@Query('tenantId') tenantId: string, @Query('orgUnitId') orgUnitId?: string) {
-    return this.profilesService.listProfiles(tenantId, orgUnitId);
+  async list(@CurrentAuth() auth: AccessTokenClaims, @Query('orgUnitId') orgUnitId?: string) {
+    return this.profilesService.listProfiles(auth.tenantId, orgUnitId);
   }
 }

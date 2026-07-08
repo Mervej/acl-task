@@ -9,7 +9,7 @@ export class UsersController {
   @Post()
   async create(@Body() dto: CreateUserDto, @Headers('x-service-api-key') serviceApiKey?: string) {
     if (!serviceApiKey) throw new UnauthorizedException('Missing x-service-api-key header');
-    const validKey = await this.usersService.verifyServiceApiKey(dto.tenantId, 'internal', serviceApiKey);
+    const validKey = await this.usersService.verifyServiceApiKey(dto.tenantId, serviceApiKey);
     if (!validKey) throw new UnauthorizedException('Invalid service API key');
     return this.usersService.createUser(dto.tenantId, dto.email, dto.password);
   }
@@ -21,7 +21,7 @@ export class UsersController {
     @Headers('x-service-api-key') serviceApiKey?: string,
   ) {
     if (!serviceApiKey) throw new UnauthorizedException('Missing x-service-api-key header');
-    const validKey = await this.usersService.verifyServiceApiKey(tenantId, 'internal', serviceApiKey);
+    const validKey = await this.usersService.verifyServiceApiKey(tenantId, serviceApiKey);
     if (!validKey) throw new UnauthorizedException('Invalid service API key');
     const user = await this.usersService.getUser(tenantId, userId);
     if (!user) throw new NotFoundException('User not found');

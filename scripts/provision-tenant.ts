@@ -1,6 +1,6 @@
-import { randomBytes } from 'crypto';
 import { Client } from 'pg';
 import { DataSource } from 'typeorm';
+import { resolveOwnServiceApiKey } from '@platform/auth-kit';
 import { controlPlaneDataSource } from '../packages/access-control/src/control-plane/data-source';
 import { Tenant, TenantDbRegistry } from '../packages/access-control/src/control-plane/entities';
 import {
@@ -9,12 +9,23 @@ import {
 import { hashSecret } from '../packages/access-control/src/password';
 import { UserProfile } from '../packages/user-management/src/entities';
 import { Expense } from '../packages/expense-management/src/entities';
+import { PayrollRun, Payslip } from '../packages/payroll/src/entities';
+import { AuditEventRecord } from '../packages/audit/src/entities';
 
 export interface ServiceDbSpec {
   serviceName: string;
   entities: Function[];
   migrationsGlob: string;
 }
+
+// Every backend service that calls access-control's /internal/* or /authz/*
+// endpoints gets its own row/secret here — including services with no DB of
+// their own (reporting, workflow, notification, invoice-management), which
+// is why this list is broader than PROVISIONED_SERVICES below.
+export const INTERNAL_SERVICE_NAMES = [
+  'access-control', 'user-management', 'expense-management', 'payroll', 'audit',
+  'reporting', 'workflow', 'notification', 'invoice-management',
+] as const;
 
 export const PROVISIONED_SERVICES: ServiceDbSpec[] = [
   {
@@ -31,6 +42,16 @@ export const PROVISIONED_SERVICES: ServiceDbSpec[] = [
     serviceName: 'expense-management',
     entities: [Expense],
     migrationsGlob: 'packages/expense-management/src/migrations/*.ts',
+  },
+  {
+    serviceName: 'payroll',
+    entities: [PayrollRun, Payslip],
+    migrationsGlob: 'packages/payroll/src/migrations/*.ts',
+  },
+  {
+    serviceName: 'audit',
+    entities: [AuditEventRecord],
+    migrationsGlob: 'packages/audit/src/migrations/*.ts',
   },
 ];
 
@@ -52,33 +73,46 @@ async function createDatabaseIfNotExists(databaseName: string): Promise<void> {
   }
 }
 
+// Re-running this (e.g. because INTERNAL_SERVICE_NAMES grew a new entry, or
+// a tenant was provisioned before some service's key existed) must backfill
+// what's missing on an already-provisioned tenant rather than erroring on
+// unique-constraint violations or leaving it stuck with a stale key set.
 export async function provisionTenant(
   slug: string,
   name: string,
-): Promise<{ tenantId: string; serviceApiKey: string }> {
+): Promise<{ tenantId: string; serviceApiKeys: Record<string, string> }> {
   if (!controlPlaneDataSource.isInitialized) await controlPlaneDataSource.initialize();
 
   const tenantRepo = controlPlaneDataSource.getRepository(Tenant);
-  const tenant = await tenantRepo.save(tenantRepo.create({ name, slug, status: 'active' }));
+  const tenant =
+    (await tenantRepo.findOne({ where: { slug } })) ??
+    (await tenantRepo.save(tenantRepo.create({ name, slug, status: 'active' })));
 
   const registryRepo = controlPlaneDataSource.getRepository(TenantDbRegistry);
-  const serviceApiKey = randomBytes(32).toString('hex');
+  const serviceApiKeys = Object.fromEntries(
+    INTERNAL_SERVICE_NAMES.map((serviceName) => [serviceName, resolveOwnServiceApiKey(serviceName)]),
+  );
 
   for (const spec of PROVISIONED_SERVICES) {
     const databaseName = `${spec.serviceName}_${slug}`.replace(/-/g, '_');
     await createDatabaseIfNotExists(databaseName);
 
-    await registryRepo.save(
-      registryRepo.create({
-        tenantId: tenant.id,
-        serviceName: spec.serviceName,
-        host: DB_HOST,
-        port: DB_PORT,
-        database: databaseName,
-        username: DB_USER,
-        password: DB_PASSWORD,
-      }),
-    );
+    const existingRegistryRow = await registryRepo.findOne({
+      where: { tenantId: tenant.id, serviceName: spec.serviceName },
+    });
+    if (!existingRegistryRow) {
+      await registryRepo.save(
+        registryRepo.create({
+          tenantId: tenant.id,
+          serviceName: spec.serviceName,
+          host: DB_HOST,
+          port: DB_PORT,
+          database: databaseName,
+          username: DB_USER,
+          password: DB_PASSWORD,
+        }),
+      );
+    }
 
     const migrationDataSource = new DataSource({
       type: 'postgres',
@@ -96,18 +130,21 @@ export async function provisionTenant(
 
     if (spec.serviceName === 'access-control') {
       const apiKeyRepo = migrationDataSource.getRepository(ApiKey);
-      await apiKeyRepo.save(
-        apiKeyRepo.create({
-          tenantId: tenant.id,
-          ownerService: 'shared',
-          keyHash: hashSecret(serviceApiKey),
-          revokedAt: null,
-        }),
-      );
+      for (const serviceName of INTERNAL_SERVICE_NAMES) {
+        const keyHash = hashSecret(serviceApiKeys[serviceName]);
+        const existingKey = await apiKeyRepo.findOne({ where: { tenantId: tenant.id, ownerService: serviceName } });
+        if (existingKey) {
+          if (existingKey.keyHash !== keyHash || existingKey.revokedAt) {
+            await apiKeyRepo.save({ ...existingKey, keyHash, revokedAt: null });
+          }
+        } else {
+          await apiKeyRepo.save(apiKeyRepo.create({ tenantId: tenant.id, ownerService: serviceName, keyHash, revokedAt: null }));
+        }
+      }
     }
 
     await migrationDataSource.destroy();
   }
 
-  return { tenantId: tenant.id, serviceApiKey };
+  return { tenantId: tenant.id, serviceApiKeys };
 }
