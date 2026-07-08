@@ -13,25 +13,25 @@ with working code, not a whitepaper — four things at once:
    isolation guarantee should not rest solely on every developer remembering a `WHERE tenant_id`
    clause.
 4. **Cross-service trust**: when Service A needs to call Service B on behalf of a user (not just
-   serve a client directly), both the calling *service's* identity and the acting *user's*
+   serve a client directly), both the calling _service's_ identity and the acting _user's_
    permission must be verified independently.
 5. **Auditability**: every access decision (allow or deny) is recorded, asynchronously, without
    blocking the request path.
 
 ## 2. Service inventory
 
-| Service | Port | Status | Owns |
-| --- | --- | --- | --- |
-| Gateway | 3000 | Implemented | Single external entry point; coarse JWT validation; routes `/api/<service>/...` to the target service by path prefix |
-| Access Control | 3001 | **Implemented** | Identity, login, JWT/refresh-token/API-key issuance, RBAC engine, org units, tenant registry |
-| User Management | 3002 | **Implemented** | Employee profile data (job title, manager, org unit), provisions identities via Access Control |
-| Expense Management | 3003 | **Implemented** | Expenses and approvals; approval triggers a cross-service call to Payroll |
-| Payroll | 3004 | **Implemented** | Payroll runs, payslips, reimbursement recording |
-| Audit | 3009 | **Implemented** | Consumes every service's audit events from Redis Streams, persists them per-tenant, exposes a query API |
-| Reporting | 3005 | Stub | Report definitions/runs — guarded routes, no persistence |
-| Workflow | 3006 | Stub | Workflow instances — guarded routes, no persistence |
-| Notification | 3007 | Stub | Notifications — guarded routes, no persistence |
-| Invoice Management | 3008 | Stub | Invoices — guarded routes, no persistence |
+| Service            | Port | Status          | Owns                                                                                                                 |
+| ------------------ | ---- | --------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Gateway            | 3000 | Implemented     | Single external entry point; coarse JWT validation; routes `/api/<service>/...` to the target service by path prefix |
+| Access Control     | 3001 | **Implemented** | Identity, login, JWT/refresh-token/API-key issuance, RBAC engine, org units, tenant registry                         |
+| User Management    | 3002 | **Implemented** | Employee profile data (job title, manager, org unit), provisions identities via Access Control                       |
+| Expense Management | 3003 | **Implemented** | Expenses and approvals; approval triggers a cross-service call to Payroll                                            |
+| Payroll            | 3004 | **Implemented** | Payroll runs, payslips, reimbursement recording                                                                      |
+| Audit              | 3009 | **Implemented** | Consumes every service's audit events from Redis Streams, persists them per-tenant, exposes a query API              |
+| Reporting          | 3005 | Stub            | Report definitions/runs — guarded routes, no persistence                                                             |
+| Workflow           | 3006 | Stub            | Workflow instances — guarded routes, no persistence                                                                  |
+| Notification       | 3007 | Stub            | Notifications — guarded routes, no persistence                                                                       |
+| Invoice Management | 3008 | Stub            | Invoices — guarded routes, no persistence                                                                            |
 
 Plus `@platform/auth-kit`, a shared internal package imported by all 10 services so JWT
 verification, permission checking, tenant-DB connection routing, and audit emission are written
@@ -57,7 +57,7 @@ clause in a shared-schema design is a live cross-tenant data breach that compile
 With DB-per-tenant-per-service, a missing tenant-scope check would need to somehow connect to a
 database the process was never even told about — the failure mode changes from "silent data
 leak" to "connection error." This is provable, not just asserted: a tenant-isolation test
-confirms that a valid token from Tenant A, holding the *real* database ID of a resource created
+confirms that a valid token from Tenant A, holding the _real_ database ID of a resource created
 by Tenant B, gets a 404 (not a 403) — because Tenant A's connection is pointed at a different
 physical database where that row simply doesn't exist.
 
@@ -66,7 +66,7 @@ service: an in-memory, LRU-capped (default 100) map of TypeORM `DataSource`s key
 `tenantId`, with an `inFlight` map to de-dupe concurrent connection creation for the same
 uncached tenant (fixes a real connection-leak bug found during the build — two simultaneous
 first-requests for a tenant would otherwise each open their own `DataSource` and orphan one).
-Looking up *which* physical database to connect to is delegated to a per-service
+Looking up _which_ physical database to connect to is delegated to a per-service
 `lookupTenantDb` callback, which reads `tenant_db_registry` (directly for Access Control, which
 already holds a live control-plane connection; via a fresh short-lived `pg` client for every
 other service, cached in Redis for 60s to avoid a connection-per-request).
@@ -90,7 +90,7 @@ per tenant. See [assumptions-and-tradeoffs.md](./assumptions-and-tradeoffs.md).
    scope carried into the token is the first assignment with a non-null `orgUnitId` (a
    single-scope-per-user simplification — see tradeoffs doc).
 5. Issue a short-lived (15 min) **access JWT** with claims `sub, tenantId, roles, permissions,
-   orgUnitId, iat, exp` (HS256, one shared secret used to both sign and verify — no per-service
+orgUnitId, iat, exp` (HS256, one shared secret used to both sign and verify — no per-service
    asymmetric keys), plus an opaque refresh token (32 random bytes, only its hash persisted,
    30-day expiry — no `/auth/refresh` endpoint exists yet to redeem it).
 6. Emit an audit event (`auth.login`, allow or deny) on both success and failure.
@@ -117,7 +117,7 @@ per tenant. See [assumptions-and-tradeoffs.md](./assumptions-and-tradeoffs.md).
   15-minute token naturally expires. This bounded staleness window, traded for not hitting a
   database on every request, is a deliberate design decision — see the tradeoffs doc for the
   precise gap between what's designed and what's actually enforced today (the fast path only ever
-  does an *exact* org-unit match, never the subtree walk the slow path supports).
+  does an _exact_ org-unit match, never the subtree walk the slow path supports).
 
 **Service-to-service (machine) auth** is a separate lane entirely: an `x-service-api-key` header,
 hashed and compared against a tenant-scoped `api_keys` table, with no JWT or gateway involved.
@@ -132,7 +132,7 @@ downstream never trusts it blindly.
 ## 5. Cross-service authorization — the worked example
 
 A user approves an expense; Expense Management needs Payroll to record the reimbursement.
-Expense Management is acting *on behalf of a user* while calling *another service*, and Payroll
+Expense Management is acting _on behalf of a user_ while calling _another service_, and Payroll
 needs to verify both facts independently:
 
 1. The user (holding `expense:approve`) calls `POST /expenses/:id/approve` on Expense Management.
@@ -142,7 +142,7 @@ needs to verify both facts independently:
    service API key as a separate `x-service-api-key` header.
 3. Payroll's `reimbursements.controller.ts` runs two independent checks:
    - **Layer 1 (user identity)**: the normal `AuthGuard` + `PermissionGuard` chain validates the
-     forwarded JWT and confirms the *original user* has `payroll:run`.
+     forwarded JWT and confirms the _original user_ has `payroll:run`.
    - **Layer 2 (service identity)**: the handler separately reads `x-service-api-key` — missing
      or invalid → 401, independent of whether layer 1 passed.
 4. Only once both pass does Payroll emit an audit event tagged `viaService: 'expense-management'`
@@ -151,9 +151,9 @@ needs to verify both facts independently:
 5. If Payroll's response is not OK, the expense **stays `pending`**, never optimistically flipped
    to `approved` — a failure in the downstream call is not swallowed.
 
-**Why both checks, not just one:** the JWT alone doesn't prove the *calling service* is
+**Why both checks, not just one:** the JWT alone doesn't prove the _calling service_ is
 legitimate (a compromised third-party service could replay a stolen user token). The API key
-alone doesn't prove the *specific user* has permission for this action, and would lose the
+alone doesn't prove the _specific user_ has permission for this action, and would lose the
 original actor's identity from the audit trail.
 
 ## 6. Auditability
@@ -167,19 +167,3 @@ a consumer group, persisting entries into that tenant's own `audit_events` table
 
 Audit emission is fire-and-forget from the caller's perspective — it never blocks or fails the
 request that triggered it.
-
-## 7. Key design decisions and why
-
-| Decision | Why |
-| --- | --- |
-| DB-per-tenant-per-service instead of shared schema + `tenant_id` column | Turns a missed tenant-scope check into a connection failure instead of a silent cross-tenant data leak |
-| Shared `@platform/auth-kit` library instead of per-service reimplementation | JWT verification, permission checking, tenant routing, and audit emission are security-critical and easy to get subtly wrong; write and test once |
-| JWT-embedded permission claims (fast path) as the default enforcement path | Avoids a DB/Redis round-trip on every single guarded request; the system is designed for read-heavy, high-throughput traffic |
-| A separate authoritative slow path (`checkLive`) for staleness-sensitive checks | Some actions can't tolerate a 15-minute staleness window even though most can |
-| Guard *instances* passed to `@UseGuards()` instead of guard classes | `AuthGuard`/`PermissionGuard` take plain constructor config (JWT secret, a configured `PermissionCheckClient`), not injectable tokens — NestJS's `@UseGuards(ClassRef)` auto-instantiation via its own DI wouldn't reuse a same-token provider registered elsewhere, so a pre-built instance is the working alternative |
-| `tenantId` always derived from the caller's JWT, never from the request body/query | A client-supplied `tenantId` would let a valid user from one tenant read or write another tenant's data just by changing a field |
-| Gateway does coarse JWT checking only, no trusted-header injection | Defense in depth — a compromised gateway can't silently grant access, because no downstream service trusts it blindly |
-| Reporting/Workflow/Notification/Invoice Management left as guarded stubs | The DB-per-tenant pattern, cross-service auth, and RBAC were already proven for real three times over (User Management, Expense Management, Payroll); building it a fourth and fifth time added no new evaluative signal for a time-boxed exercise |
-
-See [assumptions-and-tradeoffs.md](./assumptions-and-tradeoffs.md) for the full, itemized list of
-scope reductions, known gaps, and what would change for a production deployment.

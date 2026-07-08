@@ -1,9 +1,5 @@
 # Assumptions and Tradeoffs
 
-This was scoped as a **systems-design exercise with a reference implementation**, not "build
-seven production apps." Every item below is a deliberate call made under that framing, not an
-oversight — each is grounded in the actual code, not generic boilerplate.
-
 ## Scope reductions (stated up front)
 
 - **Four services are guarded stubs, not full implementations.** Reporting, Workflow,
@@ -22,10 +18,6 @@ oversight — each is grounded in the actual code, not generic boilerplate.
   on Payroll validates both auth layers and returns `{status: 'recorded', ...}`, but there is no
   `Reimbursement` entity or table — it's a landing pad that proves the two-layer cross-service
   auth pattern, not a full ledger.
-- **Timing-safe comparison and hand-rolled LRU tracking were added, then deliberately removed**
-  (commit `3a665a6`) once recognized as production hardening beyond what the brief needed. This
-  was a conscious "stop gold-plating" decision, not something missed — the login flow's
-  `loginOk = user && verifyPassword(...)` short-circuit is intentionally the simple form.
 - **Documented but not built:** tiered tenant storage (dedicated hosts for large/regulated
   tenants vs. pooled small tenants), Kafka instead of Redis Streams for audit at real scale, read
   replicas, per-tenant rate limiting, real secrets management (Vault/KMS) instead of env-var DB
@@ -54,10 +46,6 @@ oversight — each is grounded in the actual code, not generic boilerplate.
   against Access Control exists and works in isolation; wiring it into specific
   staleness-sensitive routes (or adding a role-change invalidation signal) would be the next step
   for production use.
-- **Dev JWT secret defaults to a literal string** (`process.env.JWT_SECRET ?? 'dev-secret-change-me'`)
-  wherever it's read, and every service signs/verifies with one shared symmetric secret rather
-  than per-service asymmetric keys. Acceptable for local/demo use; a real deployment needs a
-  managed secret and likely per-service key separation.
 - **No refresh-token redemption endpoint exists.** Refresh tokens are issued at login and stored
   (hashed) in `refresh_tokens`, but nothing consumes them to mint a new access token — the short
   15-minute access-token TTL exists partly because there's no rotation path built yet.
@@ -75,14 +63,6 @@ oversight — each is grounded in the actual code, not generic boilerplate.
   `createProfile()` calls Access Control's `POST /internal/users` to create the login identity,
   then saves a local `UserProfile` row referencing the returned ID. If the local save fails after
   the remote call succeeds, the identity is orphaned — there's no compensating rollback or saga.
-- **`ServiceApiKeyGuard` exists in `auth-kit` but is never actually used.** Every real
-  service-to-service check (`reimbursements.controller.ts`, `users.controller.ts`) hand-rolls the
-  same 3-line `x-service-api-key` check inline rather than applying this guard class. The
-  behavior is correct either way, but it's a real, small piece of dead/duplicated design.
-- **`UsersService.verifyServiceApiKey`'s `where` clause includes `revokedAt: undefined`**, which
-  TypeORM silently drops from the generated SQL (it skips `undefined`-valued keys). The actual
-  revocation check happens via the following JS line (`!found.revokedAt`), so behavior is still
-  correct — but the `where` clause reads as if it filters on `revokedAt` when it doesn't.
 
 ## Infrastructure shortcuts
 

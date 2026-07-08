@@ -31,7 +31,7 @@ routing, and audit emission — written and tested once, not duplicated per serv
 ## Important low-level detail: the two-guard auth chain
 
 This is the one piece of internal mechanics worth seeing explicitly — it's what runs on
-*every single guarded request*, in every service:
+_every single guarded request_, in every service:
 
 ```mermaid
 flowchart LR
@@ -44,9 +44,7 @@ flowchart LR
 
 Authentication (AuthGuard) and authorization (PermissionGuard) are deliberately separate,
 composable guards. The permission check is a **fast path** — a pure JWT-claims check, no network
-call — which is why a revoked role can stay valid until the token expires (~15 min); see
-[assumptions-and-tradeoffs.md](./assumptions-and-tradeoffs.md) for that tradeoff and the slower,
-authoritative check that exists but isn't wired into any live route yet.
+call — which is why a revoked role can stay valid until the token expires (~15 min)
 
 ## Notes
 
